@@ -1,1 +1,1 @@
-.\love-11.3-win32\lovec.exe .\ --console
+.\love-11.3-win32\love32.exe .\ --console
