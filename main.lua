@@ -1,12 +1,12 @@
 local sock = require "sock"
 local utf8 = require("utf8")
 
-
 function love.load()
 	lg = love.graphics
 
     lg.setBackgroundColor(0, 0.1, 0)
-
+	
+	debugbuild=true --SET TO FALSE AT SOME POINT
 	OnlineState = ""
     CornerImages = {}
 	FaceImages = {}
@@ -21,10 +21,10 @@ function love.load()
 	
 	FontImg = lg.newImage('Graphics/Font.png', {mipmaps=true})
 	deck = {}
+	discard = {}
+	discardTop = {}
 	cardstodraw = {};
 	typeboxes = {};
-				--preserved for later use
-				--
 	highlightedTypebox = "";
 	myname = "";
 	
@@ -55,12 +55,12 @@ function love.load()
 		BackImages[name] = lg.newImage('Graphics/Background-'..name..'.png', {mipmaps=true})
 	end
 	for nameIndex, name in ipairs({
-		'CallDitto', 'CallLuno', 'DrawPile', 'Objection', 'JoinTable', 'HostTable', 'N'
+		'CallDitto', 'CallLuno', 'DrawPile', 'Objection', 'JoinTable', 'HostTable', 'PlayGame', 'Blank', 'N'
 	}) do
 		FaceImages[name] = lg.newImage('Graphics/Maintext-'..name..'.png', {mipmaps=true})
 	end
 	for nameIndex, name in ipairs({
-		'L', 'W', 'N', 'U', 'D'
+		'L', 'O', 'P', 'W', 'B', 'G', 'N', 'U', 'D'
 	}) do
 		HeartImages[name] = lg.newImage('Graphics/HeartCircle-'..name..'.png', {mipmaps=true})
 	end
@@ -79,8 +79,8 @@ function love.load()
         end
 	end
 	for i=1,4 do
-		table.insert(deck, {colour = 'W', number = 'Wild'})
-			table.insert(deck, {colour = 'K', number = 'Wild'})
+		table.insert(deck, {colour = 'L', number = 'WildW'})
+			table.insert(deck, {colour = 'L', number = 'WildK'})
 	end
 	
 	--Populate CharList with letters and numbers
@@ -94,39 +94,52 @@ function love.load()
 	end
 	end
 	MessageFeed = ""
-	MessageFeedTable = {"Welcome to <col:blue>LU<col:pink>NO!{|lf}<col:whit>Game Pending."}
+	MessageFeedTable = {"Welcome to <col:blue>LU<col:pink>NO!<col:whit> Game Development has FINALLY begun!"}
 	MessageFeedScrollDex = 1
 	PlayerTable = {}
+	TurnTable = {}
+	MyHand = {}
+	HandIndex = 1
+	TurnIndex = 1
+	TurnsAreGoingBackward = false
  
- 
-    -- enable key repeat so backspace can be held down to trigger love.keypressed multiple times.
-    love.keyboard.setKeyRepeat(true)
--- for later.
-	--table.insert(cardstodraw, {card= table.remove(deck, love.math.random(#deck)), x=600, y=500, s=0.1, id="cardthing6", func=Blank})
-	--table.insert(cardstodraw, {card={colour = 'L', number = "CallLuno"}, x=400, y=400, s=0.1, id="LunoButton", func=CallLuno})
-
 	ReturnToMainMenu()
 end
  
 function love.draw()
 	local CardSet = IsMouseInCardBounds(love.mouse.getX(), love.mouse.getY(), false)
 	local PlayerTableChat = {}
-	if PlayerTable then
-	for i, t in pairs(PlayerTable) do table.insert(PlayerTableChat, i..": "..t) end
+	
+	if TurnTable[1] then
+		for i, t in pairs(TurnTable) do 
+			local colour=""
+			if i==TurnIndex then colour="<col:pink>" end
+			table.insert(PlayerTableChat, colour..PlayerTable[t].handcount.."{crd}: "..PlayerTable[t].name) 
+		end --it'll do for now
+	elseif PlayerTable then
+		for i, t in pairs(PlayerTable) do 
+			table.insert(PlayerTableChat, t.name)	
+		end
 	end
 	--Draw Card using Options
 	local function drawCard(card, x, y, s, id)
 			local highlight = "U"
 			local cardstack = {{bg = 'N', hc = 'N', cn = 'N', mt = 'N', bd='N'}}
-			if card.colour == 'L' then
-				cardstack.bg = 'L'
-				cardstack.hc = 'W'
+			if card.number == 'N' then
+				cardstack.bg = 'N'
+				cardstack.hc = 'N'
 				cardstack.cn = 'N'
-				cardstack.mt = card.number
-				cardstack.bd = 'W'
-			elseif card.number == 'Wild' then
-				cardstack.bg = card.colour
-				cardstack.hc = 'L'
+				cardstack.mt = 'N'
+				cardstack.bd = 'N'
+			elseif card.number == 'WildW' then
+				cardstack.bg = 'W'
+				cardstack.hc = card.colour
+				cardstack.cn = 'N'
+				cardstack.mt = 'N'
+				cardstack.bd = 'L'
+			elseif card.number == 'WildK' then
+				cardstack.bg = 'K'
+				cardstack.hc = card.colour
 				cardstack.cn = 'N'
 				cardstack.mt = 'N'
 				cardstack.bd = 'L'
@@ -154,6 +167,12 @@ function love.draw()
 				cardstack.cn = 'N'
 				cardstack.mt = 'N'
 				cardstack.bd = 'L'
+			elseif card.colour == 'L' then
+				cardstack.bg = 'L'
+				cardstack.hc = 'W'
+				cardstack.cn = 'N'
+				cardstack.mt = card.number
+				cardstack.bd = 'W'
 			else
 				cardstack.bg = card.colour
 				cardstack.hc = 'W'
@@ -162,12 +181,12 @@ function love.draw()
 				cardstack.bd = 'W'
 			end
 			
-			lg.draw(BackImages[cardstack.bg], x, y, 0, s)
-			lg.draw(HeartImages[cardstack.hc], x, y, 0, s)
-			lg.draw(CornerImages[cardstack.cn], x, y, 0, s)
-			lg.draw(FaceImages[cardstack.mt], x, y, 0, s)
+			lg.draw(BackImages[cardstack.bg] or BackImages['N'], x, y, 0, s)
+			lg.draw(HeartImages[cardstack.hc] or BackImages['N'], x, y, 0, s)
+			lg.draw(CornerImages[cardstack.cn] or BackImages['N'], x, y, 0, s)
+			lg.draw(FaceImages[cardstack.mt] or BackImages['N'], x, y, 0, s)
 			if CardSet[id] then highlight = "H" end
-			lg.draw(BorderImages[cardstack.bd..highlight], x, y, 0, s)
+			lg.draw(BorderImages[cardstack.bd..highlight] or BackImages['N'], x, y, 0, s)
 		end
 
 	local function drawText(text, x, y, charWrap, s, ignoreCommands)
@@ -252,13 +271,17 @@ function love.draw()
 				elseif drawingX==box.length then drawthing=222
 				elseif drawingX==0 and box.badge=="name" then drawthing=223
 				elseif drawingX==1 and box.badge=="name" then drawthing=224
+				elseif drawingX==0 and box.badge=="ip" then drawthing=239
+				elseif drawingX==1 and box.badge=="ip" then drawthing=240
+				elseif drawingX==0 and box.badge=="chat" then drawthing=234
+				elseif drawingX==1 and box.badge=="chat" then drawthing=235
+				elseif drawingX==0 and box.badge=="port" then drawthing=250
+				elseif drawingX==1 and box.badge=="port" then drawthing=251
 				else drawthing=221 
 				end
 			elseif drawingY==box.height then
 				if drawingX==-1 then drawthing=252
 				elseif drawingX==box.length then drawthing=254
-				elseif drawingX==box.length-2 and box.badge=="send" then drawthing=239
-				elseif drawingX==box.length-1 and box.badge=="send" then drawthing=240
 				else drawthing=253 
 				end				
 			elseif drawingX==-1 then drawthing=236
@@ -280,21 +303,17 @@ function love.draw()
 			index = index + 1
 		end
 	end
-
+	
     for index, i in pairs(cardstodraw) do
-		drawCard(i.card, i.x, i.y, i.s,i.id)
+		drawCard(i.card, i.x, i.y, i.s, i.id)
 	end
 	
 	for index, i in pairs(typeboxes) do
 		drawTextbox(i)
 	end
 	
-	drawMessageFeed(MessageFeedTable,650, 30, 29, 0.1,1)
-	if PlayerTableChat then drawMessageFeed(PlayerTableChat, 400,30,15,0.1,1) end
-end
-
-function setCurrentColour(index)
-	lg.setColor(colours[index] or {1,1,1,1}) --colour does not feel like a real word anymore
+	drawMessageFeed(MessageFeedTable,740, 30, 35, 0.1,MessageFeedScrollDex)
+	if PlayerTableChat then drawMessageFeed(PlayerTableChat, 40,30,15,0.1,1) end
 end
 
 --Find which cards the mouse is inside
@@ -314,10 +333,9 @@ function IsMouseInTextboxBounds(x,y)
 	local set = {thing=""}
 	for _, i in pairs(typeboxes) do
 		if x >=  i.x - (69*i.scale)
-        and x <  i.x + (150*(i.length+1)*i.scale) +  (69*i.scale)
+        and x <  i.x + (150*(i.length)*i.scale) +  (69*i.scale)
         and y >= i.y - (64*i.scale)
-        and y <  i.y + (300*(i.height+1)*i.scale) + (64*i.scale) then
-		print(i.name)
+        and y <  i.y + (300*(i.height)*i.scale) + (64*i.scale) then
 		set["thing"] = i.name end
 	end
 	return set
@@ -334,24 +352,194 @@ function ReturnToMainMenu()
 				IPBox={name="IPBox",x=40,y=400,scale=0.2,length=15,height=1,text="",badge="ip",ignoreCommands=true, returnfunction=Blank},
 				PortBox={name="PortBox",x=40,y=525,scale=0.2,length=15,height=1,text="",badge="port",ignoreCommands=true, returnfunction=Blank}}; 
 	ClearCardsToDraw()
-	table.insert(cardstodraw, {card={colour = 'K', number = "JoinTable"}, x=40, y=40, s=0.2, id="JoinTableButton", func=ClientHost})
-	table.insert(cardstodraw, {card={colour = 'W', number = "HostTable"}, x=240, y=40, s=0.2, id="HostTableButton", func=ServerHost})
+	createCButton({colour = 'K', number = "JoinTable"}, 40, 40, 0.2, "JoinTableButton", ClientHost)
+	createCButton({colour = 'W', number = "HostTable"}, 240, 40, 0.2,"HostTableButton", ServerHost)
 	PlayerTable = {}
-	
+	TurnTable = {}
 	GameState = "MainMenu"
 	OnlineState = ""
 end
 
 function SettingsMenuLoad()
-	typeboxes = {ChatBox={name="ChatBox",x=60,y=500,scale=0.1,length=28,height=3,text="",badge="",ignoreCommands=false, returnfunction=sendChatMessage}}
+	typeboxes = {ChatBox={name="ChatBox",x=60,y=500,scale=0.1,length=35,height=4,text="",badge="chat",ignoreCommands=false, returnfunction=sendChatMessage}}
 	ClearCardsToDraw()
+	createCButton({colour = 'L', number = "PlayGame"}, 240, 40, 0.2, "StartTableButton", PlayGame)
+	TurnTable = {}
 	GameState = "SettingsMenu"
 end
 
+function StartGame()
+	local TempTurnTable = {}
+	typeboxes = {ChatBox={name="ChatBox",x=70,y=450,scale=0.08,length=35,height=4,text="",badge="chat",ignoreCommands=false, returnfunction=sendChatMessage}}
+	ClearCardsToDraw()
+	recieveChatMessage("<col|blue>The game has started!")
+	createCButton({colour = 'B', number = "WildK"}, 40, 570, 0.1, "PlayerCard1", PlayCard1)
+	createCButton({colour = 'O', number = "WildW"}, 120, 570, 0.1, "PlayerCard2", PlayCard2)
+	createCButton({colour = 'N', number = "N"}, 200, 570, 0.1, "PlayerCard3", PlayCard3)
+	createCButton({colour = 'N', number = "N"}, 280, 570, 0.1, "PlayerCard4", PlayCard4)
+	createCButton({colour = 'N', number = "N"}, 360, 570, 0.1, "PlayerCard5", PlayCard5)
+	createCButton({colour = 'N', number = "N"}, 440, 570, 0.1, "PlayerCard6", PlayCard6)
+	createCButton({colour = 'N', number = "N"}, 520, 570, 0.1, "PlayerCard7", PlayCard7)
+	createCButton({colour = 'N', number = "N"}, 600, 570, 0.1, "PlayerCard8", PlayCard8)
+	createCButton({colour = 'L', number = "CallLuno"}, 680, 570, 0.1, "PlayerCard9", PlayCard9)
+	createCButton({colour = 'P', number = "ScrollUp"}, 760, 570, 0.05, "HandScrollUp", HandScrollU)
+	createCButton({colour = 'B', number = "ScrollDown"}, 760, 624, 0.05, "HandScrollDown", HandScrollD)
+	
+	HandIndex=1
+	
+	if OnlineState=="Server" then 
+		for i,n in pairs(PlayerTable) do 
+			for f = 1,7 do
+			table.insert(PlayerTable[i].hand, DrawCardFromDeck())
+			end
+			PlayerTable[i].handcount = 7
+			table.insert(TempTurnTable, i)
+		end
+		while #TempTurnTable>0 do table.insert(TurnTable, table.remove(TempTurnTable, math.random(#TempTurnTable))) end
+		discardTop = DrawCardFromDeck()
+		server:sendToAll("GAMESTART", {PT=PlayerTable, TT=TurnTable, DT=discardTop})
+	end
+	
+	createCButton(discardTop, 170, 280, 0.15, "DiscardPile", nil)
+	createCButton({colour = 'L', number = "DrawPile"}, 60, 280, 0.15, "DrawPile", DrawCardButton)
+	createCButton({colour = 'L', number = "CallLuno"}, 280, 280, 0.15, "CallLuno", CallLunoButton)
+	createCButton({colour = 'L', number = "Blank"}, 390, 280, 0.15, "ContextSensitiveButton", ContextSensitiveButton)
+	
+	GameState = "Gameplay"
+	UpdateHandLook()
+end
+
+function DrawCardButton() DoPlayerAction('Draw') end
+function CallLunoButton() DoPlayerAction('Luno') end
+function ContextSensitiveButton() DoPlayerAction('CSB') end
+function PlayCard1() PlayACard(0) end
+function PlayCard2() PlayACard(1) end
+function PlayCard3() PlayACard(2) end
+function PlayCard4() PlayACard(3) end
+function PlayCard5() PlayACard(4) end
+function PlayCard6() PlayACard(5) end
+function PlayCard7() PlayACard(6) end
+function PlayCard8() PlayACard(7) end
+function PlayCard9() PlayACard(8) end
+function PlayACard(n) DoPlayerAction('Play',HandIndex+n) end
+
+function DoPlayerAction(act,n)
+	if GameState ~= "Gameplay" then print("what?"); return end
+	
+	n=n or 0
+	
+	if OnlineState=="Server" then
+		if PlayerAction(act, n, "host") then
+		IterateTurnIndex()
+		server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex})
+		UpdateHandLook()
+		end
+	elseif OnlineState=="Client" then
+	client:send("PlayerDidSomething", {action=act,card=n,id=WhoAmI()})
+	end
+end
+
+function PlayerAction(action,card,id,theClient) 
+	if TurnTable[TurnIndex]==id then --update later to account for Ditto and Luno
+		if action=="Draw" then return PlayerDrawsCard(id,theClient)
+		elseif action=="Play" then return PlayerPlaysCard(id, card, theClient)
+		end
+	else 
+		return PlayerError("<col:gren>It is not your turn.")
+	end
+end
+
+function IterateTurnIndex()
+	if TurnsAreGoingBackward then
+		TurnIndex = TurnIndex - 1
+		if TurnIndex<1 then TurnIndex = #TurnTable end
+	else
+		TurnIndex = TurnIndex + 1
+		if TurnIndex>#TurnTable then TurnIndex = 1 end
+	end
+end
+
+function PlayerDrawsCard(ID,theClient)
+	table.insert(PlayerTable[ID].hand, DrawCardFromDeck())
+	PlayerTable[ID].handcount = PlayerTable[ID].handcount + 1
+	UpdateHandLook()
+	return true --update later for draw cards
+end
+
+function PlayerPlaysCard(ID,NO,theClient)
+	local DT = discardTop
+	local PlayedCard = PlayerTable[ID] and PlayerTable[ID].hand and PlayerTable[ID].hand[NO] or "asdf"
+		if PlayedCard == "asdf" then 
+			return PlayerError(ID,theClient,"<col:gren>That card does not exist.");
+		end
+		
+		if PlayedCard.colour == DT.colour or PlayedCard.number == DT.number then --update later for special cards and wilds
+			table.insert(discard,DT)
+			discardTop=PlayedCard
+			table.remove(PlayerTable[ID].hand, NO)
+			PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
+			return true
+		else
+			return PlayerError(ID,theClient,"<col:gren>Card cannot be played.")
+		end
+end
+
+function PlayerError(ID,CLI,TXT)
+if ID=="host" then recieveChatMessage(TXT)
+			else
+			if CLI then CLI:send("PlayError", TXT); end  end
+			return false
+end
+
+function UpdateGameplay(PT,TT,DT,TI)
+			PlayerTable=PT
+			TurnTable=TT
+			discardTop=DT
+			TurnIndex=TI
+			UpdateHandLook()
+end
+
+function DrawCardFromDeck()
+	if #deck < 1 then deck=discard; discard = {} end
+	return table.remove(deck, love.math.random(#deck))
+end
+
+function UpdateHandLook()
+	local myID = WhoAmI()
+	local myHand = PlayerTable[myID] and PlayerTable[myID].hand or {{colour = 'B', number = "WildK"},{colour = 'B', number = "WildK"}}
+	local theHandCount = PlayerTable[myID] and PlayerTable[myID].handcount or 9
+	if theHandCount<HandIndex+8 then if theHandCount<9 then HandIndex=1 else HandIndex=theHandCount-8 end end
+	
+	print(myID.." UpdateHandLookHas Run")
+	for i=HandIndex,HandIndex+8 do
+		cardstodraw[("PlayerCard%d"):format(i+1-HandIndex)].card = myHand[i] or {colour = 'N', number = "N"}
+	end
+	if theHandCount>9 then 
+		cardstodraw["HandScrollUp"].card = {colour = 'N', number = "ScrollUp"}
+		cardstodraw["HandScrollDown"].card = {colour = 'N', number = "ScrollDown"}
+	else
+		cardstodraw["HandScrollUp"].card = {colour = 'N', number = "N"}
+		cardstodraw["HandScrollDown"].card = {colour = 'N', number = "N"}	
+	end
+	
+	cardstodraw["DiscardPile"].card=discardTop
+end
+
+function WhoAmI()
+		if OnlineState == "Server" then return "host"
+	elseif OnlineState == "Client" then return client:getConnectId()
+	else recieveChatMessage("You have no identity right now."); return end
+end
+
+function setCurrentColour(index)
+	lg.setColor(colours[index] or {1,1,1,1}) --colour does not feel like a real word anymore
+end
+
+
 function ClearCardsToDraw()
 	cardstodraw = {}
-	table.insert(cardstodraw, {card={colour = 'K', number = "ScrollUp"}, x=550, y=40, s=0.1, id="UpScrollButton", func=ScrollUp})
-	table.insert(cardstodraw, {card={colour = 'K', number = "ScrollDown"}, x=550, y=160, s=0.1, id="DownScrollButton", func=ScrollDown})
+	createCButton({colour = 'K', number = "ScrollUp"}, 670, 40, 0.1, "UpScrollButton", ScrollUp)
+	createCButton({colour = 'K', number = "ScrollDown"}, 670, 160, 0.1, "DownScrollButton", ScrollDown)
 end	
 
 function love.mousepressed(x,y,b)
@@ -394,7 +582,7 @@ function ClientHost()
 		-- Custom callback, called whenever you send the event from the server
 		client:on("hello", function(msg)
 			PlayerTable=msg
-			appendChatFeed("<col|pink>Connected to "..msg.host.."'s Table!")
+			appendChatFeed("<col|pink>Connected to "..msg.host.name.."'s Table!")
 			client:send("playerconnect", {name=myname,index=client:getIndex()})
 		end)
 
@@ -409,12 +597,28 @@ function ClientHost()
 		client:on("playerconnected", function(data)
 			if data.disconnect then recieveChatMessage("A player has left the Table.") else recieveChatMessage(data.name.." has joined the Table!") end
 			PlayerTable=data.Table
+			if GameState=="Gameplay" then TurnTable=data.TT; TurnIndex=data.TI end
+		end)
+		
+		client:on("GAMESTART", function(data) 
+			PlayerTable=data.PT
+			TurnTable=data.TT
+			discardTop=data.DT
+			StartGame()
+		end)
+		
+		client:on("GameplayUpdate", function(data) 
+			UpdateGameplay(data.PT,data.TT,data.DT,data.TI)
+		end)
+		
+		client:on("notyourturn", function(data)
+			recieveChatMessage(data)
 		end)
 		
 		OnlineState = "Client"
 		SettingsMenuLoad()
 		end
-	else appendChatFeed("{|lf}<col|orng>You are already online!") end
+	else appendChatFeed("<col|orng>You are already online!") end
 end
 
 function ServerHost()
@@ -423,12 +627,12 @@ function ServerHost()
 		local myIP = typeboxes["IPBox"].text or "localhost"
 		local myPort = tonumber(typeboxes["PortBox"].text) or 22122
 		if myname == "" then
-			appendChatFeed("{|lf}<col|orng>Please type a name.<col|whit>")
+			appendChatFeed("<col|orng>Please type a name.<col|whit>")
 		else
 		appendChatFeed("<col|pink>Hosting Table on port "..myPort)
 		love.window.setTitle("LUNO Alpha: Hosting as "..myname)
 		server = sock.newServer("*", myPort)
-		PlayerTable["host"]=myname
+		CreatePlayerTableEntry("host",myname)
 		
 		-- Called when someone connects to the server
 		server:on("connect", function(data, client)
@@ -437,14 +641,14 @@ function ServerHost()
 		end)
 		
 		server:on("playerconnect", function(data, client)
-			PlayerTable[client:getConnectId()]=data.name
+			CreatePlayerTableEntry(client:getConnectId(),data.name)
 			server:sendToAll("playerconnected",{Table=PlayerTable,name=data.name, disconnect=false})
 			recieveChatMessage(data.name.." has joined the Table!")
 		end)
 		
 		server:on("disconnect", function(data, client)
 			UpdatePlayerTable();
-			server:sendToAll("playerconnected",{Table=PlayerTable, disconnect=true})
+			server:sendToAll("playerconnected",{Table=PlayerTable, disconnect=true, TT=TurnTable or {}, TI=TurnIndex or 1})
 			recieveChatMessage("A player has left the Table.")
 		end)
 		
@@ -455,19 +659,27 @@ function ServerHost()
 			recieveChatMessage(data.text,data.name)
 		end)
 		
+		server:on("PlayerDidSomething", function(data, client) 
+			if PlayerAction(data.action, data.card, data.id,client) then
+			IterateTurnIndex()
+			server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex} )
+			UpdateHandLook()
+			end
+		end)
+		
 		OnlineState = "Server"
 		SettingsMenuLoad()
 		end
-	else appendChatFeed("{|lf}<col|orng>You are already online!<col|whit>") end
+	else appendChatFeed("<col|orng>You are already online!<col|whit>") end
 end
 
 function UpdatePlayerTable()
 	if OnlineState == "Server" then
 		local ConnectIDSet = {host=true}
-		server:sendToAll("RebuildPlayerTable",true)
 		for i,n in pairs(server:getClients()) do ConnectIDSet[n:getConnectId()]=true end
 		for i,n in pairs(PlayerTable) do 
-		if not ConnectIDSet[i] then PlayerTable[i]=nil end 
+		if not ConnectIDSet[i] then PlayerTable[i]=nil; end
+		for i,n in pairs(TurnTable) do if not ConnectIDSet[n] then table.remove(TurnTable,i); if TurnIndex>#TurnTable then TurnIndex = 1 end end end 
 		end
 	else print("attempted to UpdatePlayerTable as Client") end
 end
@@ -476,11 +688,53 @@ function CallLuno()
 	appendChatFeed("<col|pink>GAME: <col|whit>You Called <col|blue>{!lu}<col|pink>{!no}<col|whit>!")
 end
 
-function ScrollUp() end
+function ScrollUp() 
+	if MessageFeedScrollDex>1 then MessageFeedScrollDex = MessageFeedScrollDex - 1 end
+end
 
-function ScrollDown() end
+function ScrollDown() 
+	if MessageFeedScrollDex<#MessageFeedTable then MessageFeedScrollDex = MessageFeedScrollDex + 1 end
+end
+
+function CreatePlayerTableEntry(ConnectID, Name)
+	PlayerTable[ConnectID] = {name=Name,hand={},handcount=0,spectating=false}
+end
+
+function PlayGame()
+	local playerCount = 0
+	if OnlineState ~= "Server" then appendChatFeed("<col|pink>You are not the host."); return 
+	else
+		for i,n in pairs(PlayerTable) do playerCount = playerCount + 1 end
+			if playerCount<2 and not debugbuild then appendChatFeed("<col|pink>Please wait for more players."); return
+			else StartGame()
+			end
+	end
+	
+end
 
 function Blank() end
+
+function love.resize(w, h)
+  print(("Window resized to width: %d and height: %d."):format(w, h))
+end
+
+function HandScrollU() 
+	local myID = WhoAmI()
+	local theHandCount = PlayerTable[myID] and PlayerTable[myID].handcount or 9
+	if  HandIndex<2 then return
+	else HandIndex = HandIndex - 1; UpdateHandLook()
+	end
+end
+
+function HandScrollD() 
+	local myID = WhoAmI()
+	local theHandCount = PlayerTable[myID] and PlayerTable[myID].handcount or 9
+	if  HandIndex+8>theHandCount then return
+	else HandIndex = HandIndex + 1; UpdateHandLook()
+	end
+end
+
+
 
 function sendChatMessage(textbox)
 	if OnlineState=="Server" then
@@ -534,6 +788,10 @@ function returnTypeBox()
 		box.returnfunction(box)
 	end
 end
+
+function createCButton(CARD,X,Y,S,ID,FUNC)
+	cardstodraw[ID]= {card=CARD, x=X, y=Y, s=S, id=ID, func=FUNC}
+	end
 
 function love.keypressed(key)
 	if key == "backspace" then
