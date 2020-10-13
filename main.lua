@@ -4,6 +4,8 @@ local utf8 = require("utf8")
 function love.load()
 	lg = love.graphics
 
+
+
     lg.setBackgroundColor(0, 0.1, 0)
 	
 	debugbuild=true --SET TO FALSE AT SOME POINT
@@ -94,7 +96,7 @@ function love.load()
 	end
 	end
 	MessageFeed = ""
-	MessageFeedTable = {"Welcome to <col:blue>LU<col:pink>NO!<col:whit> Game Development has FINALLY begun!"}
+	MessageFeedTable = {"Welcome to <col:blue>LU<col:pink>NO!<col:whit> We now have Cards!"}
 	MessageFeedScrollDex = 1
 	PlayerTable = {}
 	TurnTable = {}
@@ -102,10 +104,15 @@ function love.load()
 	HandIndex = 1
 	TurnIndex = 1
 	TurnsAreGoingBackward = false
+	CardsThreat = 0
+ 
+	OldWindowWidth=1280
+	OldWindowHeight=720
+	WSF=0.5
  
 	ReturnToMainMenu()
 end
- 
+
 function love.draw()
 	local CardSet = IsMouseInCardBounds(love.mouse.getX(), love.mouse.getY(), false)
 	local PlayerTableChat = {}
@@ -181,12 +188,12 @@ function love.draw()
 				cardstack.bd = 'W'
 			end
 			
-			lg.draw(BackImages[cardstack.bg] or BackImages['N'], x, y, 0, s)
-			lg.draw(HeartImages[cardstack.hc] or BackImages['N'], x, y, 0, s)
-			lg.draw(CornerImages[cardstack.cn] or BackImages['N'], x, y, 0, s)
-			lg.draw(FaceImages[cardstack.mt] or BackImages['N'], x, y, 0, s)
+			lg.draw(BackImages[cardstack.bg] or BackImages['N'], x*WSF, y*WSF, 0, s*WSF)
+			lg.draw(HeartImages[cardstack.hc] or BackImages['N'], x*WSF, y*WSF, 0, s*WSF)
+			lg.draw(CornerImages[cardstack.cn] or BackImages['N'], x*WSF, y*WSF, 0, s*WSF)
+			lg.draw(FaceImages[cardstack.mt] or BackImages['N'], x*WSF, y*WSF, 0, s*WSF)
 			if CardSet[id] then highlight = "H" end
-			lg.draw(BorderImages[cardstack.bd..highlight] or BackImages['N'], x, y, 0, s)
+			lg.draw(BorderImages[cardstack.bd..highlight] or BackImages['N'], x*WSF, y*WSF, 0, s*WSF)
 		end
 
 	local function drawText(text, x, y, charWrap, s, ignoreCommands)
@@ -196,7 +203,7 @@ function love.draw()
 		local ignorei=0
 		
 		local function drawchar(q)
-			lg.draw(FontImg, FontQuads[q], x+(spacing*OnThisLine), y+(2*spacing*TotalLines), 0, s)
+			lg.draw(FontImg, FontQuads[q], (x+(spacing*OnThisLine))*WSF, (y+(2*spacing*TotalLines)) *WSF, 0, s*WSF)
 			OnThisLine = OnThisLine + 1
 			if OnThisLine >= charWrap then
 				OnThisLine = 0
@@ -255,7 +262,7 @@ function love.draw()
 		local drawthing=256
 		
 		local function drawchar(q)
-			lg.draw(FontImg, FontQuads[q], box.x+(spacing*drawingX), box.y+(2*spacing*drawingY), 0, box.scale)
+			lg.draw(FontImg, FontQuads[q], (box.x+(spacing*drawingX))*WSF, (box.y+(2*spacing*drawingY))*WSF, 0, box.scale*WSF)
 			drawingX = drawingX + 1
 			if drawingX > box.length then
 				drawingX = -1
@@ -263,7 +270,7 @@ function love.draw()
 			end
 		end
 		
-		if highlightedTypebox==box.name then setCurrentColour("blue") else setCurrentColour("gray") end
+		if highlightedTypebox==box.name then setCurrentColour("orng") else setCurrentColour("gray") end
 		
 		while drawingY<=box.height do		
 			if drawingY==-1 then
@@ -299,7 +306,7 @@ function love.draw()
 		local Messages = #Table
 		
 		while index <= Messages do
-			linedex = linedex +(drawText(Table[index], x,linedex,charwrap,s,false) + 1.5)*300*s
+			linedex = linedex +(drawText(Table[index], x,linedex,charwrap,s,false) + 1.5)*300*s*WSF
 			index = index + 1
 		end
 	end
@@ -320,10 +327,10 @@ end
 function IsMouseInCardBounds(x,y)
 	local set = {}
 	for _, i in pairs(cardstodraw) do
-		if x >= i.x
-        and x < i.x + (700*i.s)
-        and y >= i.y
-        and y < i.y + (1080*i.s) then
+		if x >= i.x*WSF
+        and x < (i.x + (700*i.s))*WSF
+        and y >= i.y*WSF
+        and y < (i.y + (1080*i.s))*WSF then
 		set[i.id] = i.func end
 	end
 	return set
@@ -332,10 +339,10 @@ end
 function IsMouseInTextboxBounds(x,y)
 	local set = {thing=""}
 	for _, i in pairs(typeboxes) do
-		if x >=  i.x - (69*i.scale)
-        and x <  i.x + (150*(i.length)*i.scale) +  (69*i.scale)
-        and y >= i.y - (64*i.scale)
-        and y <  i.y + (300*(i.height)*i.scale) + (64*i.scale) then
+		if x >=  (i.x - (69*i.scale))*WSF
+        and x <  (i.x + (150*(i.length)*i.scale) +  (69*i.scale))*WSF
+        and y >= (i.y - (64*i.scale))*WSF
+        and y <  (i.y + (300*(i.height)*i.scale) + (64*i.scale))*WSF then
 		set["thing"] = i.name end
 	end
 	return set
@@ -431,7 +438,7 @@ function DoPlayerAction(act,n)
 	if OnlineState=="Server" then
 		if PlayerAction(act, n, "host") then
 		IterateTurnIndex()
-		server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex})
+		server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex,TGB=TurnsAreGoingBackward})
 		UpdateHandLook()
 		end
 	elseif OnlineState=="Client" then
@@ -445,7 +452,7 @@ function PlayerAction(action,card,id,theClient)
 		elseif action=="Play" then return PlayerPlaysCard(id, card, theClient)
 		end
 	else 
-		return PlayerError("<col:gren>It is not your turn.")
+		return PlayerError(id, theClient, "<col:gren>It is not your turn.")
 	end
 end
 
@@ -476,6 +483,9 @@ function PlayerPlaysCard(ID,NO,theClient)
 		if PlayedCard.colour == DT.colour or PlayedCard.number == DT.number then --update later for special cards and wilds
 			table.insert(discard,DT)
 			discardTop=PlayedCard
+			if PlayedCard.number == 'Reverse' then TurnsAreGoingBackward = not TurnsAreGoingBackward; ProperSendChatMessage("The turns have been reversed!") end --make this look good at some point
+			if PlayedCard.number == 'Skip' then IterateTurnIndex(); ProperSendChatMessage("A Skip has been played!") end --this too
+			if PlayedCard.number == 'Draw' then ProperSendChatMessage("Draw Two! Or don't. It doesn't function yet.") end --this three, along with doing something
 			table.remove(PlayerTable[ID].hand, NO)
 			PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
 			return true
@@ -491,11 +501,12 @@ if ID=="host" then recieveChatMessage(TXT)
 			return false
 end
 
-function UpdateGameplay(PT,TT,DT,TI)
+function UpdateGameplay(PT,TT,DT,TI,TGB)
 			PlayerTable=PT
 			TurnTable=TT
 			discardTop=DT
 			TurnIndex=TI
+			TurnsAreGoingBackward=TGB
 			UpdateHandLook()
 end
 
@@ -507,6 +518,8 @@ end
 function UpdateHandLook()
 	local myID = WhoAmI()
 	local myHand = PlayerTable[myID] and PlayerTable[myID].hand or {{colour = 'B', number = "WildK"},{colour = 'B', number = "WildK"}}
+	if not PlayerTable[myID] then print("UpdateHandLook is not finding the PlayerTable Entry"); debug.debug() end
+	if not PlayerTable[myID].hand then print("UpdateHandLook is not finding the Hand"); debug.debug() end
 	local theHandCount = PlayerTable[myID] and PlayerTable[myID].handcount or 9
 	if theHandCount<HandIndex+8 then if theHandCount<9 then HandIndex=1 else HandIndex=theHandCount-8 end end
 	
@@ -570,7 +583,7 @@ function ClientHost()
 
 		-- Called when a connection is made to the server
 		client:on("connect", function(data)
-			print("Client connected to the server.")
+			print("Client "..client:getConnectId().." connected to the server.")
 		end)
 		
 		-- Called when the client disconnects from the server
@@ -608,10 +621,10 @@ function ClientHost()
 		end)
 		
 		client:on("GameplayUpdate", function(data) 
-			UpdateGameplay(data.PT,data.TT,data.DT,data.TI)
+			UpdateGameplay(data.PT,data.TT,data.DT,data.TI,data.TGB)
 		end)
 		
-		client:on("notyourturn", function(data)
+		client:on("PlayError", function(data)
 			recieveChatMessage(data)
 		end)
 		
@@ -641,6 +654,7 @@ function ServerHost()
 		end)
 		
 		server:on("playerconnect", function(data, client)
+			print("Client "..client:getConnectId().." has joined as "..data.name)
 			CreatePlayerTableEntry(client:getConnectId(),data.name)
 			server:sendToAll("playerconnected",{Table=PlayerTable,name=data.name, disconnect=false})
 			recieveChatMessage(data.name.." has joined the Table!")
@@ -662,7 +676,7 @@ function ServerHost()
 		server:on("PlayerDidSomething", function(data, client) 
 			if PlayerAction(data.action, data.card, data.id,client) then
 			IterateTurnIndex()
-			server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex} )
+			server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex,TGB=TurnsAreGoingBackward} )
 			UpdateHandLook()
 			end
 		end)
@@ -716,6 +730,17 @@ function Blank() end
 
 function love.resize(w, h)
   print(("Window resized to width: %d and height: %d."):format(w, h))
+  local sw = w -(w%16)
+  local sh = h - (h%9)
+  if w~=OldWindowWidth and h~=OldWindowHeight then 
+	if sw/16 < sh/9 then sw = 16*(sh/9) else sh = 9 * (sw/16) end
+  elseif h ~= OldWindowHeight then sw = 16*(sh/9)
+  else sh = 9 * (sw/16) end
+  local coordsX, coordsY = love.window.getPosition()
+  love.window.updateMode(sw, sh, {x=coordsX,y=coordsY})
+  OldWindowHeight = sh; OldWindowWidth = sw
+  WSF=sw/1280
+  print(("Window re-resized to width: %d and height: %d. New Scale Factor is %d/80."):format(sw, sh,WSF*80))
 end
 
 function HandScrollU() 
@@ -737,15 +762,18 @@ end
 
 
 function sendChatMessage(textbox)
-	if OnlineState=="Server" then
-		recieveChatMessage(textbox.text,myname)
-		server:sendToAll("ChatMessage", {text=textbox.text, name=myname})
-	elseif OnlineState=="Client" then
-		client:send("ClientChatMessage", {text=textbox.text, name=myname})
-	else
-		recieveChatMessage(textbox.text,myname)
-	end
+	ProperSendChatMessage(textbox.text,myname)
 	textbox.text = ""
+end
+function ProperSendChatMessage(ttext,nname)
+	if OnlineState=="Server" then
+		recieveChatMessage(ttext,nname)
+		server:sendToAll("ChatMessage", {text=ttext, name=nname})
+	elseif OnlineState=="Client" then
+		client:send("ClientChatMessage", {text=ttext, name=nname})
+	else
+		recieveChatMessage(ttext,myname)
+	end
 end
 
 function recieveChatMessage(text,name)
