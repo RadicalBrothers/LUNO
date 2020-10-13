@@ -106,8 +106,8 @@ function love.load()
 	TurnsAreGoingBackward = false
 	CardsThreat = 0
  
-	OldWindowWidth=1280
-	OldWindowHeight=720
+	OldWindowWidth=640
+	OldWindowHeight=360
 	WSF=0.5
  
 	ReturnToMainMenu()
@@ -306,7 +306,7 @@ function love.draw()
 		local Messages = #Table
 		
 		while index <= Messages do
-			linedex = linedex +(drawText(Table[index], x,linedex,charwrap,s,false) + 1.5)*300*s*WSF
+			linedex = linedex + ((drawText(Table[index], x,linedex,charwrap,s,false) + 1.5)*300*s)
 			index = index + 1
 		end
 	end
@@ -596,7 +596,7 @@ function ClientHost()
 		client:on("hello", function(msg)
 			PlayerTable=msg
 			appendChatFeed("<col|pink>Connected to "..msg.host.name.."'s Table!")
-			client:send("playerconnect", {name=myname,index=client:getIndex()})
+			client:send("playerconnect", {name=myname,index=client:getConnectId()})
 		end)
 
 		client:connect()
@@ -654,8 +654,8 @@ function ServerHost()
 		end)
 		
 		server:on("playerconnect", function(data, client)
-			print("Client "..client:getConnectId().." has joined as "..data.name)
-			CreatePlayerTableEntry(client:getConnectId(),data.name)
+			print("Client "..client:getConnectId().." has joined as "..data.index)
+			CreatePlayerTableEntry(data.index,data.name)
 			server:sendToAll("playerconnected",{Table=PlayerTable,name=data.name, disconnect=false})
 			recieveChatMessage(data.name.." has joined the Table!")
 		end)
