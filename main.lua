@@ -102,13 +102,19 @@ function love.load()
 	TurnTable = {}
 	MyHand = {}
 	HandIndex = 1
-	TurnIndex = 1
-	TurnsAreGoingBackward = false
-	CardsThreat = 0
- 
+	GameInfo = {TurnIndex = 1,	TurnsAreGoingBackward = false,	CardsThreat = 0} --better than just adding to the list of things to send clients to update gameplay
+	
+	MenacingAura = lg.newParticleSystem( lg.newImage('Graphics/Menacing.png', {mipmaps=true}))
+	MenacingAura:setParticleLifetime(2, 7) -- Particles live at least 2s and at most 5s.
+	MenacingAura:setEmissionRate(0)
+	MenacingAura:setLinearAcceleration(0, -200, 0, -50) -- Random movement in y direction.
+	MenacingAura:setColors(1, 1, 1, 1, 1, 1, 1, 0) -- Fade to transparency.
+	MenacingAura:setEmissionArea("uniform", 210, 12)
 	OldWindowWidth=640
 	OldWindowHeight=360
 	WSF=0.5
+	
+	BizarreSpaghettiIDWorkaround = nil
  
 	ReturnToMainMenu()
 end
@@ -116,11 +122,12 @@ end
 function love.draw()
 	local CardSet = IsMouseInCardBounds(love.mouse.getX(), love.mouse.getY(), false)
 	local PlayerTableChat = {}
+	local CardZLayers = {}
 	
 	if TurnTable[1] then
 		for i, t in pairs(TurnTable) do 
 			local colour=""
-			if i==TurnIndex then colour="<col:pink>" end
+			if i==GameInfo.TurnIndex then colour="<col:pink>" end
 			table.insert(PlayerTableChat, colour..PlayerTable[t].handcount.."{crd}: "..PlayerTable[t].name) 
 		end --it'll do for now
 	elseif PlayerTable then
@@ -132,7 +139,7 @@ function love.draw()
 	local function drawCard(card, x, y, s, id)
 			local highlight = "U"
 			local cardstack = {{bg = 'N', hc = 'N', cn = 'N', mt = 'N', bd='N'}}
-			if card.number == 'N' then
+			if card.number == 'N' and card.colour == 'N' then
 				cardstack.bg = 'N'
 				cardstack.hc = 'N'
 				cardstack.cn = 'N'
@@ -312,7 +319,17 @@ function love.draw()
 	end
 	
     for index, i in pairs(cardstodraw) do
-		drawCard(i.card, i.x, i.y, i.s, i.id)
+		local Z = i.ZAxis or 1
+		for a=1,Z do
+			if not CardZLayers[a] then CardZLayers[a]={} end
+		end
+		table.insert(CardZLayers[Z],i)
+	end
+	
+	for index, i in ipairs(CardZLayers) do
+		for jndex, j in pairs(i) do
+			drawCard(j.card, j.x, j.y, j.s, j.id)
+		end
 	end
 	
 	for index, i in pairs(typeboxes) do
@@ -321,6 +338,7 @@ function love.draw()
 	
 	drawMessageFeed(MessageFeedTable,740, 30, 35, 0.1,MessageFeedScrollDex)
 	if PlayerTableChat then drawMessageFeed(PlayerTableChat, 40,30,15,0.1,1) end
+	lg.draw(MenacingAura, 220*WSF, 432*WSF, 0, WSF*0.15)
 end
 
 --Find which cards the mouse is inside
@@ -373,6 +391,7 @@ function SettingsMenuLoad()
 	createCButton({colour = 'L', number = "PlayGame"}, 240, 40, 0.2, "StartTableButton", PlayGame)
 	TurnTable = {}
 	GameState = "SettingsMenu"
+	GameInfo = {TurnIndex = 1,	TurnsAreGoingBackward = false,	CardsThreat = 0}
 end
 
 function StartGame()
@@ -438,7 +457,7 @@ function DoPlayerAction(act,n)
 	if OnlineState=="Server" then
 		if PlayerAction(act, n, "host") then
 		IterateTurnIndex()
-		server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex,TGB=TurnsAreGoingBackward})
+		server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,GI=GameInfo})
 		UpdateHandLook()
 		end
 	elseif OnlineState=="Client" then
@@ -447,30 +466,34 @@ function DoPlayerAction(act,n)
 end
 
 function PlayerAction(action,card,id,theClient) 
-	if TurnTable[TurnIndex]==id then --update later to account for Ditto and Luno
+	if TurnTable[GameInfo.TurnIndex]==id then --update later to account for Ditto and Luno
 		if action=="Draw" then return PlayerDrawsCard(id,theClient)
 		elseif action=="Play" then return PlayerPlaysCard(id, card, theClient)
+		elseif action=="WCS" then return WildColourConfirm(id,card,theClient)
 		end
 	else 
 		return PlayerError(id, theClient, "<col:gren>It is not your turn.")
 	end
 end
 
-function IterateTurnIndex()
-	if TurnsAreGoingBackward then
-		TurnIndex = TurnIndex - 1
-		if TurnIndex<1 then TurnIndex = #TurnTable end
+function IterateTurnIndex(inverted)
+	if GameInfo.TurnsAreGoingBackward and inverted or (not GameInfo.TurnsAreGoingBackward and not inverted) then
+		GameInfo.TurnIndex = GameInfo.TurnIndex - 1
+		if GameInfo.TurnIndex<1 then GameInfo.TurnIndex = #TurnTable end
 	else
-		TurnIndex = TurnIndex + 1
-		if TurnIndex>#TurnTable then TurnIndex = 1 end
+		GameInfo.TurnIndex = GameInfo.TurnIndex + 1
+		if GameInfo.TurnIndex>#TurnTable then GameInfo.TurnIndex = 1 end
 	end
 end
 
 function PlayerDrawsCard(ID,theClient)
-	table.insert(PlayerTable[ID].hand, DrawCardFromDeck())
-	PlayerTable[ID].handcount = PlayerTable[ID].handcount + 1
-	UpdateHandLook()
-	return true --update later for draw cards
+	local nnn = 1
+	if GameInfo.CardsThreat > 0 then nnn = GameInfo.CardsThreat; GameInfo.CardsThreat = 0 end
+	for i=1,nnn do
+		table.insert(PlayerTable[ID].hand, DrawCardFromDeck())
+		PlayerTable[ID].handcount = PlayerTable[ID].handcount + 1
+	end
+	return true
 end
 
 function PlayerPlaysCard(ID,NO,theClient)
@@ -480,33 +503,85 @@ function PlayerPlaysCard(ID,NO,theClient)
 			return PlayerError(ID,theClient,"<col:gren>That card does not exist.");
 		end
 		
-		if PlayedCard.colour == DT.colour or PlayedCard.number == DT.number then --update later for special cards and wilds
+		if PlayedCard.colour == "L" then
+			if GameInfo.CardsThreat > 0 then --account for Black-Queen Counter
+				PlayerError(ID,theClient,"<col:gren>You are under attack! Click the draw pile.")
+			elseif WildColourSelectCall(ID,theClient,PlayedCard.number) then
+			discardTop=PlayedCard
+			table.remove(PlayerTable[ID].hand, NO)
+			PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
+			IterateTurnIndex(true)
+			return true
+			end
+		elseif PlayedCard.colour == DT.colour or PlayedCard.number == DT.number then 
+			if GameInfo.CardsThreat > 0 then --account for Counter
+				PlayerError(ID,theClient,"<col:gren>You are under attack! Click the draw pile.")
+			else
 			table.insert(discard,DT)
 			discardTop=PlayedCard
-			if PlayedCard.number == 'Reverse' then TurnsAreGoingBackward = not TurnsAreGoingBackward; ProperSendChatMessage("The turns have been reversed!") end --make this look good at some point
-			if PlayedCard.number == 'Skip' then IterateTurnIndex(); ProperSendChatMessage("A Skip has been played!") end --this too
-			if PlayedCard.number == 'Draw' then ProperSendChatMessage("Draw Two! Or don't. It doesn't function yet.") end --this three, along with doing something
+			if PlayedCard.number == 'Reverse' then GameInfo.TurnsAreGoingBackward = not GameInfo.TurnsAreGoingBackward; ProperSendChatMessage("<col:pink>The turns have been Reversed!") end --make this look good at some point
+			if PlayedCard.number == 'Skip' then IterateTurnIndex(); ProperSendChatMessage("<col:pink>Someone's been Skipped!") end --this too
+			if PlayedCard.number == 'Draw' then GameInfo.CardsThreat = GameInfo.CardsThreat + 2; ProperSendChatMessage("<col:pink>Oh? It's a Draw Two!") end --this three
 			table.remove(PlayerTable[ID].hand, NO)
 			PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
 			return true
+			end
 		else
 			return PlayerError(ID,theClient,"<col:gren>Card cannot be played.")
 		end
 end
 
 function PlayerError(ID,CLI,TXT)
-if ID=="host" then recieveChatMessage(TXT)
+			if ID=="host" then recieveChatMessage(TXT)
 			else
-			if CLI then CLI:send("PlayError", TXT); end  end
-			return false
+				if CLI then CLI:send("PlayError", TXT); end  
+			end
+		return false
 end
 
-function UpdateGameplay(PT,TT,DT,TI,TGB)
+function WildColourSelectCall(ID,CLI,NUM)
+	local BW = {WildW = "<col:pink>It's a White Queen!", WildK = "<col:pink>Oh my! A Killer Queen!"}
+	if ID=="host" then WildCSUI(); server:sendToAll("ChatMessage",{text=BW[NUM] or "Error Message: NotQueen"}) 
+	else
+		if CLI then CLI:send("WCSUI",true); server:sendToAllBut(CLI,"ChatMessage",{text=BW[NUM] or "Error Message: NotQueen"}); recieveChatMessage(BW[NUM] or "Error Message: NotQueen")
+		else print("No Client to WCScall"); return false end
+	end
+	
+	return true
+end
+
+function WildCSUI() 
+	createCButton({colour = 'O', number = "N"}, 170, 280, 0.05, "Z-CSUI-O", ColourSelectO, 2)
+	createCButton({colour = 'P', number = "N"}, 240, 280, 0.05, "Z-CSUI-P", ColourSelectP, 2)
+	createCButton({colour = 'B', number = "N"}, 170, 388, 0.05, "Z-CSUI-B", ColourSelectB, 2)
+	createCButton({colour = 'G', number = "N"}, 240, 388, 0.05, "Z-CSUI-G", ColourSelectG, 2)
+	recieveChatMessage("<col:pink>Choose the Queen's Colour.")
+end
+
+function ColourSelectB() TrueCS("B") end
+function ColourSelectP() TrueCS("P") end
+function ColourSelectO() TrueCS("O") end
+function ColourSelectG() TrueCS("G") end
+
+function TrueCS(colour)
+	for n,i in pairs({"Z-CSUI-O","Z-CSUI-B","Z-CSUI-P","Z-CSUI-G"}) do cardstodraw[i]=nil end
+	DoPlayerAction("WCS",colour)
+end
+
+function WildColourConfirm(ID,ChosenColour,CLI)
+	discardTop.colour = ChosenColour
+	print(ChosenColour)
+	if discardTop.number == "WildK" then
+		GameInfo.CardsThreat = GameInfo.CardsThreat + 4
+	end
+	return true
+end
+
+function UpdateGameplay(PT,TT,DT,GI)
 			PlayerTable=PT
 			TurnTable=TT
 			discardTop=DT
-			TurnIndex=TI
-			TurnsAreGoingBackward=TGB
+			GameInfo=GI
 			UpdateHandLook()
 end
 
@@ -536,11 +611,12 @@ function UpdateHandLook()
 	end
 	
 	cardstodraw["DiscardPile"].card=discardTop
+	MenacingAura:setEmissionRate(GameInfo.CardsThreat or 0)
 end
 
 function WhoAmI()
 		if OnlineState == "Server" then return "host"
-	elseif OnlineState == "Client" then return client:getConnectId()
+	elseif OnlineState == "Client" then return BizarreSpaghettiIDWorkaround or client:getConnectId()
 	else recieveChatMessage("You have no identity right now."); return end
 end
 
@@ -598,7 +674,8 @@ function ClientHost()
 			appendChatFeed("<col|pink>Connected to "..msg.host.name.."'s Table!")
 			client:send("playerconnect", {name=myname,index=client:getConnectId()})
 		end)
-
+		
+		BizarreSpaghettiIDWorkaround = nil
 		client:connect()
 		
 		-- Recieved when the server acknowledges a message.
@@ -610,7 +687,12 @@ function ClientHost()
 		client:on("playerconnected", function(data)
 			if data.disconnect then recieveChatMessage("A player has left the Table.") else recieveChatMessage(data.name.." has joined the Table!") end
 			PlayerTable=data.Table
-			if GameState=="Gameplay" then TurnTable=data.TT; TurnIndex=data.TI end
+			if GameState=="Gameplay" then TurnTable=data.TT; GameInfo=data.GI end
+		end)
+		
+		client:on("BizarreSpaghettiIDWorkaround", function(data)
+			BizarreSpaghettiIDWorkaround = data
+			print("BSIDW activated")
 		end)
 		
 		client:on("GAMESTART", function(data) 
@@ -621,11 +703,15 @@ function ClientHost()
 		end)
 		
 		client:on("GameplayUpdate", function(data) 
-			UpdateGameplay(data.PT,data.TT,data.DT,data.TI,data.TGB)
+			UpdateGameplay(data.PT,data.TT,data.DT,data.GI)
 		end)
 		
 		client:on("PlayError", function(data)
 			recieveChatMessage(data)
+		end)
+		
+		client:on("WCSUI", function(data)
+			WildCSUI()
 		end)
 		
 		OnlineState = "Client"
@@ -655,14 +741,15 @@ function ServerHost()
 		
 		server:on("playerconnect", function(data, client)
 			print("Client "..client:getConnectId().." has joined as "..data.index)
-			CreatePlayerTableEntry(data.index,data.name)
+			if data.index ~= client:getConnectId() then client:send("BizarreSpaghettiIDWorkaround",client:getConnectId()) end
+			CreatePlayerTableEntry(client:getConnectId(),data.name)
 			server:sendToAll("playerconnected",{Table=PlayerTable,name=data.name, disconnect=false})
 			recieveChatMessage(data.name.." has joined the Table!")
 		end)
 		
 		server:on("disconnect", function(data, client)
 			UpdatePlayerTable();
-			server:sendToAll("playerconnected",{Table=PlayerTable, disconnect=true, TT=TurnTable or {}, TI=TurnIndex or 1})
+			server:sendToAll("playerconnected",{Table=PlayerTable, disconnect=true, TT=TurnTable or {}, GI=GameInfo or 1})
 			recieveChatMessage("A player has left the Table.")
 		end)
 		
@@ -676,7 +763,7 @@ function ServerHost()
 		server:on("PlayerDidSomething", function(data, client) 
 			if PlayerAction(data.action, data.card, data.id,client) then
 			IterateTurnIndex()
-			server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,TI=TurnIndex,TGB=TurnsAreGoingBackward} )
+			server:sendToAll("GameplayUpdate", {PT=PlayerTable,TT=TurnTable,DT=discardTop,GI=GameInfo} )
 			UpdateHandLook()
 			end
 		end)
@@ -693,7 +780,7 @@ function UpdatePlayerTable()
 		for i,n in pairs(server:getClients()) do ConnectIDSet[n:getConnectId()]=true end
 		for i,n in pairs(PlayerTable) do 
 		if not ConnectIDSet[i] then PlayerTable[i]=nil; end
-		for i,n in pairs(TurnTable) do if not ConnectIDSet[n] then table.remove(TurnTable,i); if TurnIndex>#TurnTable then TurnIndex = 1 end end end 
+		for i,n in pairs(TurnTable) do if not ConnectIDSet[n] then table.remove(TurnTable,i); if GameInfo.TurnIndex>#TurnTable then GameInfo.TurnIndex = 1 end end end 
 		end
 	else print("attempted to UpdatePlayerTable as Client") end
 end
@@ -817,8 +904,8 @@ function returnTypeBox()
 	end
 end
 
-function createCButton(CARD,X,Y,S,ID,FUNC)
-	cardstodraw[ID]= {card=CARD, x=X, y=Y, s=S, id=ID, func=FUNC}
+function createCButton(CARD,X,Y,S,ID,FUNC,Z)
+	cardstodraw[ID]= {card=CARD, x=X, y=Y, s=S, id=ID, func=FUNC, ZAxis=Z or 1}
 	end
 
 function love.keypressed(key)
@@ -842,6 +929,9 @@ function love.update(dt)
 	if OnlineState == "Server" then
 		server:update()
 	end	
+	if GameState == "Gameplay" then
+		MenacingAura:update(dt)
+	end
 end
 
 -- disconnect immediately on exit
