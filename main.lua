@@ -57,12 +57,12 @@ function love.load()
 		BackImages[name] = lg.newImage('Graphics/Background-'..name..'.png', {mipmaps=true})
 	end
 	for nameIndex, name in ipairs({
-		'CallDitto', 'CallLuno', 'DrawPile', 'Objection', 'JoinTable', 'HostTable', 'PlayGame', 'Blank', 'N'
+		'CallDitto', 'CallLuno', 'DrawPile', 'Objection', 'JoinTable', 'HostTable', 'PlayGame', 'Blank', 'OK', 'Cancel', 'N'
 	}) do
 		FaceImages[name] = lg.newImage('Graphics/Maintext-'..name..'.png', {mipmaps=true})
 	end
 	for nameIndex, name in ipairs({
-		'L', 'O', 'P', 'W', 'B', 'G', 'N', 'U', 'D'
+		'L', 'O', 'P', 'W', 'B', 'G', 'N', 'U', 'D', 'H', 'X'
 	}) do
 		HeartImages[name] = lg.newImage('Graphics/HeartCircle-'..name..'.png', {mipmaps=true})
 	end
@@ -70,19 +70,6 @@ function love.load()
 		'LH', 'WH', 'NH', 'LU', 'WU', 'NU'
 	}) do
 		BorderImages[name] = lg.newImage('Graphics/Border-'..name..'.png', {mipmaps=true})
-	end
-		
-	--Populate Deck	
-	for suitIndex, suit in ipairs({'O', 'P', 'B', 'G'}) do
-		table.insert(deck, {colour = suit, number = 0})
-		for rankIndex, rank in ipairs({1, 2, 3, 4, 5, 6, 7, 8, 9, 'Skip', 'Reverse', 'Draw'}) do
-			table.insert(deck, {colour = suit, number = rank})
-			table.insert(deck, {colour = suit, number = rank})
-        end
-	end
-	for i=1,4 do
-		table.insert(deck, {colour = 'L', number = 'WildW'})
-			table.insert(deck, {colour = 'L', number = 'WildK'})
 	end
 	
 	--Populate CharList with letters and numbers
@@ -102,10 +89,10 @@ function love.load()
 	TurnTable = {}
 	MyHand = {}
 	HandIndex = 1
-	GameInfo = {TurnIndex = 1,	TurnsAreGoingBackward = false,	CardsThreat = 0} --better than just adding to the list of things to send clients to update gameplay
+	GameInfo = {}--better than just adding to the list of things to send clients to update gameplay
 	
 	MenacingAura = lg.newParticleSystem( lg.newImage('Graphics/Menacing.png', {mipmaps=true}))
-	MenacingAura:setParticleLifetime(2, 7) -- Particles live at least 2s and at most 5s.
+	MenacingAura:setParticleLifetime(2, 5) -- Particles live at least 2s and at most 5s.
 	MenacingAura:setEmissionRate(0)
 	MenacingAura:setLinearAcceleration(0, -200, 0, -50) -- Random movement in y direction.
 	MenacingAura:setColors(1, 1, 1, 1, 1, 1, 1, 0) -- Fade to transparency.
@@ -114,9 +101,35 @@ function love.load()
 	OldWindowHeight=360
 	WSF=0.5
 	
+	PopupBox=nil
+	
+	PopupBoxText={endserver="<col:orng>This will destroy the server.{|lf}Continue?",endgame="<col:orng>End the game?"}
+	
 	BizarreSpaghettiIDWorkaround = nil
- 
+	ResetGameInfo()
+	ShuffleDeck()
 	ReturnToMainMenu()
+end
+
+function ShuffleDeck()
+	deck = {}
+	discard = {}
+--Populate Deck	
+	for suitIndex, suit in ipairs({'O', 'P', 'B', 'G'}) do
+		table.insert(deck, {colour = suit, number = 0})
+		for rankIndex, rank in ipairs({1, 2, 3, 4, 5, 6, 7, 8, 9, 'Skip', 'Reverse', 'Draw'}) do
+			table.insert(deck, {colour = suit, number = rank})
+			table.insert(deck, {colour = suit, number = rank})
+        end
+	end
+	for i=1,4 do
+		table.insert(deck, {colour = 'L', number = 'WildW'})
+			table.insert(deck, {colour = 'L', number = 'WildK'})
+	end
+end
+
+function ResetGameInfo()
+	GameInfo = {TurnIndex = 1,	TurnsAreGoingBackward = false,	CardsThreat = 0,	WhoWentLast = nil,	NotNormalTurn=false} 
 end
 
 function love.draw()
@@ -125,11 +138,22 @@ function love.draw()
 	local CardZLayers = {}
 	
 	if TurnTable[1] then
+		local DontTurnTable = {}
 		for i, t in pairs(TurnTable) do 
-			local colour=""
-			if i==GameInfo.TurnIndex then colour="<col:pink>" end
-			table.insert(PlayerTableChat, colour..PlayerTable[t].handcount.."{crd}: "..PlayerTable[t].name) 
+			if PlayerTable[t].gamerMode ~= "player" then --do something else with this sooner or later
+				local identifier = ""
+				if PlayerTable[t].gamerMode == "goneOut" then identifier = "<col:blue>{win}   "
+				elseif PlayerTable[t].gamerMode == "goneOut" then identifier = "<col:blue>{spc}   "
+				end
+				table.insert(DontTurnTable, identifier..PlayerTable[t].name)
+			else
+				local colour=""
+				if i==GameInfo.TurnIndex then colour="<col:pink>" end
+				if PlayerTable[t].lunoRisk == "called" then colour = colour.."{!lu}{!no}!  " else colour = colour..PlayerTable[t].handcount.."{crd}: " end
+				table.insert(PlayerTableChat, colour..PlayerTable[t].name) 
+			end
 		end --it'll do for now
+		for j, u in pairs(DontTurnTable) do table.insert(PlayerTableChat, u) end
 	elseif PlayerTable then
 		for i, t in pairs(PlayerTable) do 
 			table.insert(PlayerTableChat, t.name)	
@@ -336,6 +360,10 @@ function love.draw()
 		drawTextbox(i)
 	end
 	
+	if PopupBox then
+		drawText(PopupBoxText[PopupBox],240,140,30,0.08)
+	end
+	
 	drawMessageFeed(MessageFeedTable,740, 30, 35, 0.1,MessageFeedScrollDex)
 	if PlayerTableChat then drawMessageFeed(PlayerTableChat, 40,30,15,0.1,1) end
 	lg.draw(MenacingAura, 220*WSF, 432*WSF, 0, WSF*0.15)
@@ -349,7 +377,7 @@ function IsMouseInCardBounds(x,y)
         and x < (i.x + (700*i.s))*WSF
         and y >= i.y*WSF
         and y < (i.y + (1080*i.s))*WSF then
-		set[i.id] = i.func end
+		set[i.id] = {f=i.func,d=i.extraData} end
 	end
 	return set
 end
@@ -388,26 +416,33 @@ end
 function SettingsMenuLoad()
 	typeboxes = {ChatBox={name="ChatBox",x=60,y=500,scale=0.1,length=35,height=4,text="",badge="chat",ignoreCommands=false, returnfunction=sendChatMessage}}
 	ClearCardsToDraw()
-	createCButton({colour = 'L', number = "PlayGame"}, 240, 40, 0.2, "StartTableButton", PlayGame)
+	
+	if OnlineState == "Server" then
+		createCButton({colour= 'H', number='WildK'}, 280, 30, 0.1, "BackButton", CreatePopup, 2, {text="endserver", func=DestroyServer})
+		createCButton({colour = 'L', number = "PlayGame"}, 340, 340, 0.15, "StartTableButton", PlayGame)
+	end
+	
 	TurnTable = {}
 	GameState = "SettingsMenu"
-	GameInfo = {TurnIndex = 1,	TurnsAreGoingBackward = false,	CardsThreat = 0}
+	ResetGameInfo()
+	MenacingAura:reset()
 end
 
 function StartGame()
 	local TempTurnTable = {}
 	typeboxes = {ChatBox={name="ChatBox",x=70,y=450,scale=0.08,length=35,height=4,text="",badge="chat",ignoreCommands=false, returnfunction=sendChatMessage}}
 	ClearCardsToDraw()
+	ShuffleDeck()
 	recieveChatMessage("<col|blue>The game has started!")
-	createCButton({colour = 'B', number = "WildK"}, 40, 570, 0.1, "PlayerCard1", PlayCard1)
-	createCButton({colour = 'O', number = "WildW"}, 120, 570, 0.1, "PlayerCard2", PlayCard2)
-	createCButton({colour = 'N', number = "N"}, 200, 570, 0.1, "PlayerCard3", PlayCard3)
-	createCButton({colour = 'N', number = "N"}, 280, 570, 0.1, "PlayerCard4", PlayCard4)
-	createCButton({colour = 'N', number = "N"}, 360, 570, 0.1, "PlayerCard5", PlayCard5)
-	createCButton({colour = 'N', number = "N"}, 440, 570, 0.1, "PlayerCard6", PlayCard6)
-	createCButton({colour = 'N', number = "N"}, 520, 570, 0.1, "PlayerCard7", PlayCard7)
-	createCButton({colour = 'N', number = "N"}, 600, 570, 0.1, "PlayerCard8", PlayCard8)
-	createCButton({colour = 'L', number = "CallLuno"}, 680, 570, 0.1, "PlayerCard9", PlayCard9)
+	createCButton({colour = 'B', number = "WildK"}, 40, 570, 0.1, "PlayerCard1", PlayACard, 1, 0)
+	createCButton({colour = 'O', number = "WildW"}, 120, 570, 0.1, "PlayerCard2", PlayACard, 1, 1)
+	createCButton({colour = 'N', number = "N"}, 200, 570, 0.1, "PlayerCard3", PlayACard,1,2)
+	createCButton({colour = 'N', number = "N"}, 280, 570, 0.1, "PlayerCard4", PlayACard,1,3)
+	createCButton({colour = 'N', number = "N"}, 360, 570, 0.1, "PlayerCard5", PlayACard,1,4)
+	createCButton({colour = 'N', number = "N"}, 440, 570, 0.1, "PlayerCard6", PlayACard,1,5)
+	createCButton({colour = 'N', number = "N"}, 520, 570, 0.1, "PlayerCard7", PlayACard,1,6)
+	createCButton({colour = 'N', number = "N"}, 600, 570, 0.1, "PlayerCard8", PlayACard,1,7)
+	createCButton({colour = 'L', number = "CallLuno"}, 680, 570, 0.1, "PlayerCard9", PlayACard,1,8)
 	createCButton({colour = 'P', number = "ScrollUp"}, 760, 570, 0.05, "HandScrollUp", HandScrollU)
 	createCButton({colour = 'B', number = "ScrollDown"}, 760, 624, 0.05, "HandScrollDown", HandScrollD)
 	
@@ -415,14 +450,19 @@ function StartGame()
 	
 	if OnlineState=="Server" then 
 		for i,n in pairs(PlayerTable) do 
+			n.hand={}
+			if n.gamerMode=="goneOut" then n.gamerMode="player" end
+			n.lunoRisk="zero"
 			for f = 1,7 do
-			table.insert(PlayerTable[i].hand, DrawCardFromDeck())
+			table.insert(n.hand, DrawCardFromDeck())
 			end
-			PlayerTable[i].handcount = 7
+			n.handcount = 7
 			table.insert(TempTurnTable, i)
 		end
 		while #TempTurnTable>0 do table.insert(TurnTable, table.remove(TempTurnTable, math.random(#TempTurnTable))) end
 		discardTop = DrawCardFromDeck()
+		if discardTop.colour=="L" then local CT={"O","G","P","B"}; discardTop.colour = CT[math.random(4)] end
+		createCButton({colour= 'H', number='WildK'}, 280, 30, 0.1, "BackButton", CreatePopup, 2, {text="endgame", func=DestroyGame})
 		server:sendToAll("GAMESTART", {PT=PlayerTable, TT=TurnTable, DT=discardTop})
 	end
 	
@@ -438,15 +478,6 @@ end
 function DrawCardButton() DoPlayerAction('Draw') end
 function CallLunoButton() DoPlayerAction('Luno') end
 function ContextSensitiveButton() DoPlayerAction('CSB') end
-function PlayCard1() PlayACard(0) end
-function PlayCard2() PlayACard(1) end
-function PlayCard3() PlayACard(2) end
-function PlayCard4() PlayACard(3) end
-function PlayCard5() PlayACard(4) end
-function PlayCard6() PlayACard(5) end
-function PlayCard7() PlayACard(6) end
-function PlayCard8() PlayACard(7) end
-function PlayCard9() PlayACard(8) end
 function PlayACard(n) DoPlayerAction('Play',HandIndex+n) end
 
 function DoPlayerAction(act,n)
@@ -467,38 +498,68 @@ end
 
 function PlayerAction(action,card,id,theClient) 
 	if TurnTable[GameInfo.TurnIndex]==id then --update later to account for Ditto and Luno
-		if action=="Draw" then return PlayerDrawsCard(id,theClient)
+		if action=="Draw" then return PlayerDrawsCard(id,false,theClient)
 		elseif action=="Play" then return PlayerPlaysCard(id, card, theClient)
 		elseif action=="WCS" then return WildColourConfirm(id,card,theClient)
+		elseif action=="Luno" then return LunoCalled(id,theClient, true)
 		end
 	else 
-		return PlayerError(id, theClient, "<col:gren>It is not your turn.")
+		if action=="Luno" then return LunoCalled(id,theClient, false)
+		else return PlayerError(id, theClient, "<col:gren>It is not your turn.") end
 	end
 end
 
 function IterateTurnIndex(inverted)
-	if GameInfo.TurnsAreGoingBackward and inverted or (not GameInfo.TurnsAreGoingBackward and not inverted) then
-		GameInfo.TurnIndex = GameInfo.TurnIndex - 1
-		if GameInfo.TurnIndex<1 then GameInfo.TurnIndex = #TurnTable end
-	else
-		GameInfo.TurnIndex = GameInfo.TurnIndex + 1
-		if GameInfo.TurnIndex>#TurnTable then GameInfo.TurnIndex = 1 end
+	local breaker = true
+	local iteration = 0
+	while true do
+		if GameInfo.TurnsAreGoingBackward and not inverted or (not GameInfo.TurnsAreGoingBackward and inverted) then
+			GameInfo.TurnIndex = GameInfo.TurnIndex - 1
+			if GameInfo.TurnIndex<1 then GameInfo.TurnIndex = #TurnTable end
+		else
+			GameInfo.TurnIndex = GameInfo.TurnIndex + 1
+			if GameInfo.TurnIndex>#TurnTable then GameInfo.TurnIndex = 1 end
+		end
+		iteration = iteration + 1
+		if PlayerTable[TurnTable[GameInfo.TurnIndex]].gamerMode == "player" then return end
+		if iteration > #TurnTable then ProperSendChatMessage("nobody's playing"); return end
 	end
 end
 
-function PlayerDrawsCard(ID,theClient)
+function PlayerDrawsCard(ID,ignoreCardsThreat,theClient)
+	if GameInfo.NotNormalTurn and not ignoreCardsThreat then return PlayerError(ID,theClient,"<col:gren>Select the Queen's colour!") end
 	local nnn = 1
-	if GameInfo.CardsThreat > 0 then nnn = GameInfo.CardsThreat; GameInfo.CardsThreat = 0 end
+	if GameInfo.CardsThreat > 0 and not ignoreCardsThreat then nnn = GameInfo.CardsThreat; GameInfo.CardsThreat = 0 end
 	for i=1,nnn do
 		table.insert(PlayerTable[ID].hand, DrawCardFromDeck())
 		PlayerTable[ID].handcount = PlayerTable[ID].handcount + 1
 	end
+	PlayerTable[ID].lunoRisk = "zero"
 	return true
 end
 
 function PlayerPlaysCard(ID,NO,theClient)
+	local function CardPlayed(PC)
+		table.insert(discard,discardTop)
+		discardTop=PC
+		table.remove(PlayerTable[ID].hand, NO)
+		PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
+		if PlayerTable[ID].handcount == 1 then
+			if PlayerTable[ID].lunoRisk == "zero" then  PlayerTable[ID].lunoRisk = "vulnerable" end
+		else PlayerTable[ID].lunoRisk = "zero" end
+		
+		if PlayerTable[ID].handcount == 0 then
+			ProperSendChatMessage("<col:gren>"..PlayerTable[ID].name.." has gone out!")
+			PlayerTable[ID].gamerMode="goneOut"
+		end
+		
+		if PlayerTable[GameInfo.WhoWentLast] and PlayerTable[GameInfo.WhoWentLast].lunoRisk == "vulnerable" then PlayerTable[GameInfo.WhoWentLast].lunoRisk = "called" end
+		GameInfo.WhoWentLast = ID
+		return true
+	end
 	local DT = discardTop
 	local PlayedCard = PlayerTable[ID] and PlayerTable[ID].hand and PlayerTable[ID].hand[NO] or "asdf"
+		if GameInfo.NotNormalTurn then return PlayerError(ID,theClient,"<col:gren>Select the Queen's colour!") end
 		if PlayedCard == "asdf" then 
 			return PlayerError(ID,theClient,"<col:gren>That card does not exist.");
 		end
@@ -507,28 +568,50 @@ function PlayerPlaysCard(ID,NO,theClient)
 			if GameInfo.CardsThreat > 0 then --account for Black-Queen Counter
 				PlayerError(ID,theClient,"<col:gren>You are under attack! Click the draw pile.")
 			elseif WildColourSelectCall(ID,theClient,PlayedCard.number) then
-			discardTop=PlayedCard
-			table.remove(PlayerTable[ID].hand, NO)
-			PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
 			IterateTurnIndex(true)
-			return true
+			return CardPlayed(PlayedCard)
 			end
 		elseif PlayedCard.colour == DT.colour or PlayedCard.number == DT.number then 
 			if GameInfo.CardsThreat > 0 then --account for Counter
 				PlayerError(ID,theClient,"<col:gren>You are under attack! Click the draw pile.")
 			else
-			table.insert(discard,DT)
-			discardTop=PlayedCard
 			if PlayedCard.number == 'Reverse' then GameInfo.TurnsAreGoingBackward = not GameInfo.TurnsAreGoingBackward; ProperSendChatMessage("<col:pink>The turns have been Reversed!") end --make this look good at some point
 			if PlayedCard.number == 'Skip' then IterateTurnIndex(); ProperSendChatMessage("<col:pink>Someone's been Skipped!") end --this too
 			if PlayedCard.number == 'Draw' then GameInfo.CardsThreat = GameInfo.CardsThreat + 2; ProperSendChatMessage("<col:pink>Oh? It's a Draw Two!") end --this three
-			table.remove(PlayerTable[ID].hand, NO)
-			PlayerTable[ID].handcount = PlayerTable[ID].handcount - 1
-			return true
+			return CardPlayed(PlayedCard)
 			end
 		else
 			return PlayerError(ID,theClient,"<col:gren>Card cannot be played.")
 		end
+end
+
+function LunoCalled(ID, CLIENT, isMyTurn)
+	local isthecallvalid = false
+	local errormessage = nil
+	if isMyTurn then
+		PlayerTable[ID].lunoRisk="called"
+		if PlayerTable[ID].handcount == 2 then ProperSendChatMessage("<col:gren>"..PlayerTable[ID].name.." has called LUNO!");  isthecallvalid = true
+		else errormessage = "<col:gren>What an odd time to call LUNO{...}" end
+	end
+	
+	if not PlayerTable[ID] then print("an invalid player called luno?!"); return debug.debug() end
+	if PlayerTable[GameInfo.WhoWentLast] then
+			if PlayerTable[GameInfo.WhoWentLast].lunoRisk == "vulnerable" then
+				CalledOut(GameInfo.WhoWentLast)
+				isthecallvalid = true
+			else if not errormessage then errormessage = "<col:gren>Now's not the time for that." end
+			end
+		else errormessage = "<col:gren>Nobody's even played yet!"
+	end
+		
+	if errormessage then PlayerError(ID, CLIENT, errormessage) end
+	if isthecallvalid then IterateTurnIndex(true) end
+	return isthecallvalid
+end
+
+function CalledOut(ID)
+	ProperSendChatMessage("<col:gren>Ouch! Called Out!")
+	for i=1,2 do PlayerDrawsCard(ID, true) end
 end
 
 function PlayerError(ID,CLI,TXT)
@@ -539,6 +622,37 @@ function PlayerError(ID,CLI,TXT)
 		return false
 end
 
+function CreatePopup(data)
+data = data or {}
+PopupBox = data.text
+createCButton({colour='L',number='OK'},280,210, 0.1, "OK", data.func, 1)
+createCButton({colour='L',number='Cancel'},380,210, 0.1, "Cancel", DeletePopup, 1)
+end
+
+function DeletePopup()
+PopupBox = nil
+cardstodraw["OK"]=nil
+cardstodraw["Cancel"]=nil
+end
+
+function DestroyServer()
+	if OnlineState=="Server" then
+	server:sendToAll("DCnow",true)
+	server:update()
+	server:destroy()
+	ReturnToMainMenu()
+	end
+	DeletePopup()
+end
+
+function DestroyGame()
+if OnlineState=="Server" then
+	server:sendToAll("GameOver",true)
+	SettingsMenuLoad()
+	end
+	DeletePopup()
+end
+
 function WildColourSelectCall(ID,CLI,NUM)
 	local BW = {WildW = "<col:pink>It's a White Queen!", WildK = "<col:pink>Oh my! A Killer Queen!"}
 	if ID=="host" then WildCSUI(); server:sendToAll("ChatMessage",{text=BW[NUM] or "Error Message: NotQueen"}) 
@@ -546,22 +660,17 @@ function WildColourSelectCall(ID,CLI,NUM)
 		if CLI then CLI:send("WCSUI",true); server:sendToAllBut(CLI,"ChatMessage",{text=BW[NUM] or "Error Message: NotQueen"}); recieveChatMessage(BW[NUM] or "Error Message: NotQueen")
 		else print("No Client to WCScall"); return false end
 	end
-	
+	GameInfo.NotNormalTurn = "WCS"
 	return true
 end
 
 function WildCSUI() 
-	createCButton({colour = 'O', number = "N"}, 170, 280, 0.05, "Z-CSUI-O", ColourSelectO, 2)
-	createCButton({colour = 'P', number = "N"}, 240, 280, 0.05, "Z-CSUI-P", ColourSelectP, 2)
-	createCButton({colour = 'B', number = "N"}, 170, 388, 0.05, "Z-CSUI-B", ColourSelectB, 2)
-	createCButton({colour = 'G', number = "N"}, 240, 388, 0.05, "Z-CSUI-G", ColourSelectG, 2)
+	createCButton({colour = 'O', number = "N"}, 170, 280, 0.05, "Z-CSUI-O", TrueCS, 2, "O")
+	createCButton({colour = 'P', number = "N"}, 240, 280, 0.05, "Z-CSUI-P", TrueCS, 2, "P")
+	createCButton({colour = 'B', number = "N"}, 170, 388, 0.05, "Z-CSUI-B", TrueCS, 2, "B")
+	createCButton({colour = 'G', number = "N"}, 240, 388, 0.05, "Z-CSUI-G", TrueCS, 2, "G")
 	recieveChatMessage("<col:pink>Choose the Queen's Colour.")
 end
-
-function ColourSelectB() TrueCS("B") end
-function ColourSelectP() TrueCS("P") end
-function ColourSelectO() TrueCS("O") end
-function ColourSelectG() TrueCS("G") end
 
 function TrueCS(colour)
 	for n,i in pairs({"Z-CSUI-O","Z-CSUI-B","Z-CSUI-P","Z-CSUI-G"}) do cardstodraw[i]=nil end
@@ -574,6 +683,7 @@ function WildColourConfirm(ID,ChosenColour,CLI)
 	if discardTop.number == "WildK" then
 		GameInfo.CardsThreat = GameInfo.CardsThreat + 4
 	end
+	GameInfo.NotNormalTurn=false
 	return true
 end
 
@@ -634,8 +744,8 @@ end
 function love.mousepressed(x,y,b)
 	local set = IsMouseInCardBounds(love.mouse.getX(), love.mouse.getY())
 	local boxset = IsMouseInTextboxBounds(love.mouse.getX(), love.mouse.getY())
-	for id, func in pairs(set) do
-		(func or Blank)(b)
+	for id, funcT in pairs(set) do
+		(funcT.f or Blank)(funcT.d)
 	end
 	
 	for id, func in pairs(boxset) do
@@ -714,6 +824,16 @@ function ClientHost()
 			WildCSUI()
 		end)
 		
+		client:on("DCnow", function(data)
+		client:disconnect()
+		appendChatFeed("<col|orng>The table has been dispersed.")
+		ReturnToMainMenu()
+		end)
+		
+		client:on("GameOver", function(data)
+		SettingsMenuLoad()
+		end)
+		
 		OnlineState = "Client"
 		SettingsMenuLoad()
 		end
@@ -785,10 +905,6 @@ function UpdatePlayerTable()
 	else print("attempted to UpdatePlayerTable as Client") end
 end
 
-function CallLuno()
-	appendChatFeed("<col|pink>GAME: <col|whit>You Called <col|blue>{!lu}<col|pink>{!no}<col|whit>!")
-end
-
 function ScrollUp() 
 	if MessageFeedScrollDex>1 then MessageFeedScrollDex = MessageFeedScrollDex - 1 end
 end
@@ -798,7 +914,7 @@ function ScrollDown()
 end
 
 function CreatePlayerTableEntry(ConnectID, Name)
-	PlayerTable[ConnectID] = {name=Name,hand={},handcount=0,spectating=false}
+	PlayerTable[ConnectID] = {name=Name,hand={},handcount=0,gamerMode="player",lunoRisk="zero"}
 end
 
 function PlayGame()
@@ -904,8 +1020,8 @@ function returnTypeBox()
 	end
 end
 
-function createCButton(CARD,X,Y,S,ID,FUNC,Z)
-	cardstodraw[ID]= {card=CARD, x=X, y=Y, s=S, id=ID, func=FUNC, ZAxis=Z or 1}
+function createCButton(CARD,X,Y,S,ID,FUNC,Z,ED)
+	cardstodraw[ID]= {card=CARD, x=X, y=Y, s=S, id=ID, func=FUNC, ZAxis=Z or 1,extraData=ED}
 	end
 
 function love.keypressed(key)
